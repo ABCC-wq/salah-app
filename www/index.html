@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#080A0C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>عدّاد الصلاة</title>
+<style>
+  @font-face{font-family:'Amiri';src:url('fonts/amiri-400.woff2') format('woff2');
+             font-weight:400;font-style:normal;font-display:swap;}
+  @font-face{font-family:'Tajawal';src:url('fonts/tajawal-300.woff2') format('woff2');
+             font-weight:300;font-style:normal;font-display:swap;}
+  @font-face{font-family:'Tajawal';src:url('fonts/tajawal-400.woff2') format('woff2');
+             font-weight:400;font-style:normal;font-display:swap;}
+
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  :root{
+    --ink:#F3EFE6;
+    --muted:rgba(243,239,230,.52);
+    --faint:rgba(243,239,230,.20);
+    --hair:rgba(243,239,230,.10);
+    --gold:#E6C07B;
+    --a:#0A0D14; --b:#131A2B;           /* current ambient pair */
+    --tash-a:#0B3A2C; --tash-b:#17604A; /* tashahhud emerald */
+    --ease:cubic-bezier(.22,.61,.36,1);
+  }
+  html,body{height:100%;overflow:hidden;overscroll-behavior:none;}
+  body{
+    background:#080A0C;color:var(--ink);
+    font-family:'Tajawal',system-ui,'Segoe UI',sans-serif;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+    touch-action:manipulation;
+  }
+  #stage{position:fixed;inset:0;height:100dvh;}
+
+  /* ---------- background layers ---------- */
+  #bgBase{position:absolute;inset:0;background:linear-gradient(165deg,var(--a) 0%,var(--b) 100%);
+          opacity:1;transition:opacity .5s ease;}
+  #bgTash{position:absolute;inset:0;background:linear-gradient(165deg,var(--tash-a) 0%,var(--tash-b) 100%);
+          opacity:0;transition:opacity 2.1s var(--ease);}
+  #bgTash.on{opacity:1;}
+  #bgGrain{position:absolute;inset:0;pointer-events:none;
+    background-image:radial-gradient(circle at 50% 50%,rgba(255,255,255,.035) 1px,transparent 1.7px);
+    background-size:26px 26px;}
+
+  /* ---------- screens ---------- */
+  .screen{position:absolute;inset:0;display:flex;flex-direction:column;
+    padding:calc(env(safe-area-inset-top) + 22px) 22px calc(env(safe-area-inset-bottom) + 22px);
+    opacity:0;transform:scale(.985);pointer-events:none;
+    transition:opacity .45s var(--ease),transform .45s var(--ease);}
+  .screen.on{opacity:1;transform:none;pointer-events:auto;}
+
+  /* ---------- home ---------- */
+  #home{justify-content:center;gap:18px;}
+  .head{text-align:center;}
+  .head h1{font-family:'Amiri',serif;font-weight:400;font-size:31px;letter-spacing:.5px;line-height:1.2;}
+  .head p{font-size:12.5px;color:var(--muted);margin-top:5px;font-weight:300;letter-spacing:.2px;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:4px;}
+  .tile{
+    position:relative;border:1px solid var(--hair);border-radius:19px;
+    background:rgba(255,255,255,.032);
+    min-height:104px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+    color:var(--ink);font-family:inherit;cursor:pointer;
+    opacity:0;transform:translateY(12px);
+    transition:background .2s,border-color .2s,transform .16s var(--ease);
+  }
+  .tile.in{animation:rise .5s var(--ease) forwards;}
+  @keyframes rise{to{opacity:1;transform:none;}}
+  .tile:active{transform:scale(.965);background:rgba(255,255,255,.075);}
+  .tile .nm{font-family:'Amiri',serif;font-size:25px;line-height:1;}
+  .tile .rk{font-size:11.5px;color:var(--muted);font-weight:300;}
+  .tile .dn{position:absolute;top:11px;left:12px;display:flex;align-items:center;gap:4px;
+            font-size:10.5px;color:var(--gold);opacity:.9;font-weight:400;}
+  .tile .dn i{width:5px;height:5px;border-radius:50%;background:var(--gold);display:block;}
+  .tile[data-done="1"]{border-color:rgba(230,192,123,.32);background:rgba(230,192,123,.055);}
+  .foot{text-align:center;font-size:11.5px;color:var(--faint);font-weight:300;margin-top:10px;}
+
+  /* ---------- counter ---------- */
+  #count{justify-content:space-between;align-items:center;}
+  .cTop{width:100%;display:flex;flex-direction:column;align-items:center;gap:12px;
+        transition:opacity .8s var(--ease);}
+  .cName{font-family:'Amiri',serif;font-size:22px;color:var(--muted);letter-spacing:.4px;}
+  .pips{display:flex;gap:7px;}
+  .pips b{width:6px;height:6px;border-radius:50%;background:var(--faint);display:block;
+          transition:background .4s,transform .4s var(--ease);}
+  .pips b.fill{background:var(--gold);}
+  .pips b.now{background:rgba(230,192,123,.55);transform:scale(1.5);}
+
+  .cMid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
+        transition:opacity .8s var(--ease);}
+  .ring{width:200px;height:200px;border-radius:50%;border:1px solid var(--hair);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+        position:relative;}
+  .ring::after{content:"";position:absolute;inset:-14px;border-radius:50%;
+        border:1px solid rgba(243,239,230,.045);}
+  .rLbl{font-size:12px;color:var(--muted);font-weight:300;letter-spacing:1px;}
+  .rNum{font-family:'Amiri',serif;font-size:96px;line-height:.98;font-weight:400;
+        transition:transform .35s var(--ease);}
+  .rNum.beat{transform:scale(1.09);}
+  .suj{display:flex;flex-direction:column;align-items:center;gap:9px;}
+  .suj .row{display:flex;gap:13px;}
+  .suj .row s{width:13px;height:13px;border-radius:50%;border:1px solid rgba(243,239,230,.3);
+        display:block;text-decoration:none;transition:background .35s var(--ease),border-color .35s,transform .35s var(--ease);}
+  .suj .row s.fill{background:var(--gold);border-color:var(--gold);transform:scale(1.12);}
+  .suj em{font-style:normal;font-size:11.5px;color:var(--muted);font-weight:300;letter-spacing:1px;}
+
+  .cBot{width:100%;display:flex;align-items:center;justify-content:space-between;
+        transition:opacity .8s var(--ease);}
+  .dim{opacity:.1 !important;}
+
+  .ui{background:none;border:none;color:var(--ink);font-family:inherit;cursor:pointer;
+      font-size:13px;font-weight:300;padding:11px 15px;border-radius:12px;opacity:.45;
+      transition:opacity .2s,background .2s;}
+  .ui:active{opacity:.9;background:rgba(255,255,255,.07);}
+  .ui:disabled{opacity:.14;}
+  .hint{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 74px);left:0;right:0;text-align:center;
+        font-size:12px;color:var(--faint);font-weight:300;transition:opacity .7s var(--ease);}
+
+  /* ---------- tashahhud overlay ---------- */
+  #tash{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:14px;pointer-events:none;}
+  #tWord{font-family:'Amiri',serif;font-size:76px;line-height:1;letter-spacing:2px;
+        opacity:0;transform:translateY(16px) scale(.93);filter:blur(9px);
+        transition:opacity 1s var(--ease),transform 1s var(--ease),filter 1s var(--ease);}
+  #tSub{font-size:13.5px;color:rgba(243,239,230,.62);font-weight:300;letter-spacing:1.5px;
+        opacity:0;transform:translateY(10px);filter:blur(5px);
+        transition:opacity 1s var(--ease) .12s,transform 1s var(--ease) .12s,filter 1s var(--ease) .12s;}
+  #tash.show #tWord,#tash.show #tSub{opacity:1;transform:none;filter:blur(0);}
+
+  /* ---------- done ---------- */
+  #done{justify-content:center;align-items:center;text-align:center;gap:0;}
+  .dTop{font-family:'Amiri',serif;font-size:40px;color:var(--gold);letter-spacing:1px;}
+  .dRule{width:46px;height:1px;background:var(--hair);margin:30px 0 28px;}
+  .dSay{font-size:12.5px;color:var(--muted);font-weight:300;margin-bottom:9px;letter-spacing:.3px;}
+  .dName{font-family:'Amiri',serif;font-size:52px;line-height:1.14;}
+  .dMeta{font-size:13px;color:var(--muted);font-weight:300;margin-top:12px;}
+  .dTime{font-size:12px;color:var(--faint);font-weight:300;margin-top:5px;}
+  .dActs{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 26px);left:22px;right:22px;
+        display:flex;flex-direction:column;align-items:center;gap:9px;}
+  .btn{width:100%;max-width:330px;padding:16px;border-radius:16px;border:1px solid rgba(230,192,123,.42);
+       background:rgba(230,192,123,.1);color:var(--gold);font-family:'Amiri',serif;font-size:19px;
+       cursor:pointer;transition:transform .16s var(--ease),background .2s;}
+  .btn:active{transform:scale(.975);background:rgba(230,192,123,.2);}
+  .btn.quiet{border-color:var(--hair);background:transparent;color:var(--muted);font-size:17px;padding:14px;}
+  .btn.quiet:active{background:rgba(255,255,255,.06);}
+  #bNext{animation:nxIn .5s var(--ease) both .25s;}
+  @keyframes nxIn{from{opacity:0;transform:translateY(9px);}to{opacity:1;transform:none;}}
+
+  /* ---------- bits ---------- */
+  .rip{position:absolute;border-radius:50%;pointer-events:none;transform:translate(-50%,-50%) scale(.2);
+       opacity:.5;animation:rip .65s var(--ease) forwards;}
+  @keyframes rip{to{transform:translate(-50%,-50%) scale(1);opacity:0;}}
+  #nosleep{position:absolute;top:0;left:0;width:1px;height:1px;opacity:0;
+           pointer-events:none;border:0;}
+  #toast{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 86px);left:50%;transform:translateX(-50%) translateY(8px);
+    background:rgba(12,16,20,.9);border:1px solid var(--hair);border-radius:999px;padding:9px 17px;
+    font-size:12.5px;color:var(--muted);font-weight:300;opacity:0;pointer-events:none;
+    transition:opacity .3s,transform .3s var(--ease);white-space:nowrap;}
+  #toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  @media (max-height:680px){
+    .ring{width:172px;height:172px;} .rNum{font-size:82px;}
+    .tile{min-height:90px;} .tile .nm{font-size:22px;}
+    .dName{font-size:44px;} .dTop{font-size:34px;} #tWord{font-size:64px;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.01ms !important;transition-duration:.12s !important;}
+    #bgTash{transition-duration:.4s !important;}
+  }
+</style>
+</head>
+<body oncontextmenu="return false">
+<div id="stage">
+  <div id="bgBase"></div>
+  <div id="bgTash"></div>
+  <div id="bgGrain"></div>
+
+  <!-- ================= HOME ================= -->
+  <section id="home" class="screen">
+    <div class="head">
+      <h1>اختر الصلاة</h1>
+      <p id="hijri"></p>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="foot">المس أي مكان في الشاشة عند كل سجود</div>
+  </section>
+
+  <!-- ================= COUNTER ================= -->
+  <section id="count" class="screen">
+    <div class="cTop" id="cTop">
+      <div class="cName" id="cName">صلاة الظهر</div>
+      <div class="pips" id="pips"></div>
+    </div>
+
+    <div class="cMid" id="cMid">
+      <div class="ring">
+        <div class="rLbl">ركعة</div>
+        <div class="rNum" id="rNum">٠</div>
+      </div>
+      <div class="suj">
+        <div class="row"><s id="s1"></s><s id="s2"></s></div>
+        <em>سجود</em>
+      </div>
+    </div>
+
+    <div class="cBot" id="cBot">
+      <button class="ui" id="bExit">خروج</button>
+      <button class="ui" id="bEnd">إنهاء الصلاة</button>
+      <button class="ui" id="bUndo" disabled>تراجع</button>
+    </div>
+    <div class="hint" id="hint">المس الشاشة عند كل سجود</div>
+  </section>
+
+  <!-- ================= TASHAHHUD ================= -->
+  <div id="tash">
+    <div id="tWord">تشهد</div>
+    <div id="tSub"></div>
+  </div>
+
+  <!-- ================= DONE ================= -->
+  <section id="done" class="screen">
+    <div class="dTop">تقبّل الله</div>
+    <div class="dRule"></div>
+    <div class="dSay">الصلاة التي أدّيتها الآن</div>
+    <div class="dName" id="dName">صلاة الظهر</div>
+    <div class="dMeta" id="dMeta"></div>
+    <div class="dTime" id="dTime"></div>
+    <div class="dActs">
+      <button class="btn" id="bNext" hidden></button>
+      <button class="btn" id="bHome">رجوع إلى الصلوات</button>
+      <button class="ui" id="bResume">لم أُتِمّ بعد — متابعة العدّ</button>
+    </div>
+  </section>
+
+  <video id="nosleep" muted playsinline loop preload="auto"
+         disableremoteplayback aria-hidden="true" tabindex="-1">
+    <source src="data:video/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAM6EU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHYTbuMU6uEElTDZ1OsggEeTbuMU6uEHFO7a1OsggMk7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsirXsYMPQkBNgI1MYXZmNjAuMTYuMTAwV0GNTGF2ZjYwLjE2LjEwMESJiECncAAAAAAAFlSua8GuAQAAAAAAADjXgQFzxYhJL0NWeXrc7JyBACK1nIN1bmSIgQCGhVZfVlA4g4EBI+ODhAvrwgDgibCBQLqBQJqBAhJUw2f8c3OgY8CAZ8iaRaOHRU5DT0RFUkSHjUxhdmY2MC4xNi4xMDBzc9ZjwItjxYhJL0NWeXrc7GfIoUWjh0VOQ09ERVJEh5RMYXZjNjAuMzEuMTAyIGxpYnZweGfIoUWjiERVUkFUSU9ORIeTMDA6MDA6MDMuMDAwMDAwMDAwAB9DtnVBf+eBAKOqgQAAgPACAJ0BKkAAQAAARwiFhYiFhIgCAgAGcDxCYAqyIPcwAP7/q1CAo5aBAMgA0QEAARAQABgAGFgv9AAIjoAAo5aBAZAA0QEAARAQABgAGFgv9AAIjoAAo5aBAlgA0QEAARAQABgAGFgv9AAIjoAAo5aBAyAA0QEAARAQABgAGFgv9AAIjoAAo5aBA+gA0QEAARAQABgAGFgv9AAIjoAAo5aBBLAA0QEAARAQABgAGFgv9AAIjoAAo5aBBXgA0QEAARAQFGAAYWC/0AAiOgAAo5aBBkAA0QEAARAQABgAGFgv9AAIjoAAo5aBBwgA0QEAARAQABgAGFgv9AAIjoAAo5aBB9AA0QEAARAQABgAGFgv9AAIjoAAo5aBCJgA0QEAARAQABgAGFgv9AAIjoAAo5aBCWAA0QEAARAQABgAGFgv9AAIjoAAo5aBCigA0QEAARAQABgAGFgv9AAIjoAAo5aBCvAA0QEAARAQABgAGFgv9AAIjoAAHFO7a5G7j7OBALeK94EB8YIBn/CBAw==" type="video/webm">
+    <source src="data:video/mp4;base64,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" type="video/mp4">
+  </video>
+
+  <div id="toast"></div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------------- data ---------------- */
+var PRAYERS = [
+  {id:'dhuhr',  name:'صلاة الظهر',  short:'الظهر',  rakaat:4,    a:'#111A22', b:'#183440', next:'asr'},
+  {id:'asr',    name:'صلاة العصر',  short:'العصر',  rakaat:4,    a:'#1A1410', b:'#3A2818'},
+  {id:'maghrib',name:'صلاة المغرب', short:'المغرب', rakaat:3,    a:'#1C0F17', b:'#3E182A', next:'isha'},
+  {id:'isha',   name:'صلاة العشاء', short:'العشاء', rakaat:4,    a:'#0A0D14', b:'#151E33'},
+  {id:'fajr',   name:'صلاة الفجر',  short:'الفجر',  rakaat:2,    a:'#0B1226', b:'#15274F'},
+  {id:'open',   name:'لامحدود',     short:'لامحدود',rakaat:null, a:'#0F1412', b:'#1E2A24'}
+];
+
+var COOLDOWN = 1500;   // ms between counted touches
+var HOLD     = 7000;   // ms the word تشهد stays on screen
+
+/* ---------------- helpers ---------------- */
+var AR='٠١٢٣٤٥٦٧٨٩';
+function ar(n){return String(n).replace(/\d/g,function(d){return AR[+d];});}
+function rakWord(n){
+  if(n===1) return 'ركعة واحدة';
+  if(n===2) return 'ركعتان';
+  if(n<=10) return ar(n)+' ركعات';
+  return ar(n)+' ركعة';
+}
+function $(id){return document.getElementById(id);}
+function byId(id){for(var i=0;i<PRAYERS.length;i++){if(PRAYERS[i].id===id)return PRAYERS[i];}return null;}
+function buzz(p){try{navigator.vibrate&&navigator.vibrate(p);}catch(e){}}
+function nowTime(){
+  try{return new Date().toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});}
+  catch(e){var d=new Date();return ar(d.getHours())+':'+ar(('0'+d.getMinutes()).slice(-2));}
+}
+function today(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
+
+/* ---------------- storage (works in app, as a saved file, or in memory) ---------------- */
+var mem={};
+var store={
+  get:function(k){
+    if(window.storage&&window.storage.get){
+      return window.storage.get(k).then(function(r){return r?r.value:null;}).catch(function(){return null;});
+    }
+    return Promise.resolve(function(){
+      try{return localStorage.getItem(k);}catch(e){return mem[k]||null;}
+    }());
+  },
+  set:function(k,v){
+    if(window.storage&&window.storage.set){return window.storage.set(k,v).catch(function(){});}
+    try{localStorage.setItem(k,v);}catch(e){mem[k]=v;}
+    return Promise.resolve();
+  }
+};
+var log={date:today(),done:{}};
+function loadLog(){
+  return store.get('salah:log').then(function(raw){
+    if(raw){try{var p=JSON.parse(raw);if(p&&p.date===today())log=p;}catch(e){}}
+    paintTiles();
+  });
+}
+function saveDone(id,time,rak){
+  if(log.date!==today()){log={date:today(),done:{}};}
+  log.done[id]={t:time,r:rak};
+  store.set('salah:log',JSON.stringify(log));
+  paintTiles();
+}
+
+/* ---------------- state ---------------- */
+var S={screen:'home',prayer:null,sujood:0,last:0,tash:false,timers:[]};
+function clearTimers(){S.timers.forEach(clearTimeout);S.timers=[];}
+function later(fn,ms){S.timers.push(setTimeout(fn,ms));}
+
+function show(name){
+  ['home','count','done'].forEach(function(n){$(n).classList.toggle('on',n===name);});
+  S.screen=name;
+}
+
+/* ---------------- home ---------------- */
+function paintTiles(){
+  var g=$('grid');g.innerHTML='';
+  PRAYERS.forEach(function(p,i){
+    var d=log.done[p.id];
+    var t=document.createElement('button');
+    t.className='tile';t.setAttribute('data-done',d?'1':'0');
+    t.innerHTML='<span class="nm">'+p.short+'</span><span class="rk">'+
+      (p.rakaat?rakWord(p.rakaat):'عدد مفتوح')+'</span>'+
+      (d?'<span class="dn"><i></i>'+d.t+'</span>':'');
+    t.addEventListener('click',function(){start(p);});
+    g.appendChild(t);
+    setTimeout(function(){t.classList.add('in');},60+i*55);
+  });
+}
+try{
+  $('hijri').textContent=new Date().toLocaleDateString('ar-SA-u-ca-islamic',
+    {weekday:'long',day:'numeric',month:'long'});
+}catch(e){ $('hijri').textContent=''; }
+
+/* ---------------- start / paint counter ---------------- */
+function ambient(p){
+  var r=document.documentElement.style;
+  $('bgBase').style.opacity='0';
+  setTimeout(function(){
+    r.setProperty('--a',p.a); r.setProperty('--b',p.b);
+    $('bgBase').style.opacity='1';
+  },220);
+}
+function start(p){
+  clearTimers();
+  S.prayer=p;S.sujood=0;S.last=0;S.tash=false;
+  $('cName').textContent=p.name;
+  $('hint').style.opacity='1';
+  $('bgTash').classList.remove('on');
+  $('tash').classList.remove('show');
+  ambient(p);
+  paintCounter();
+  show('count');
+  stayAwake();
+}
+function rakOf(){return Math.max(1,Math.ceil(S.sujood/2));}
+function sujOf(){return S.sujood===0?0:((S.sujood-1)%2)+1;}
+
+function paintCounter(){
+  var p=S.prayer,rak=rakOf(),suj=sujOf();
+  $('rNum').textContent=ar(S.sujood===0?0:rak);
+  $('s1').className=suj>=1?'fill':'';
+  $('s2').className=suj>=2?'fill':'';
+  $('bUndo').disabled=S.sujood===0;
+  var pips=$('pips');
+  if(p.rakaat){
+    if(pips.childElementCount!==p.rakaat){
+      pips.innerHTML='';for(var i=0;i<p.rakaat;i++)pips.appendChild(document.createElement('b'));
+    }
+    Array.prototype.forEach.call(pips.children,function(b,i){
+      var n=i+1;b.className=(n<rak||(n===rak&&suj===2))?'fill':(n===rak&&S.sujood>0?'now':'');
+    });
+  }else{
+    pips.innerHTML='<b class="'+(S.sujood?'fill':'')+'"></b>';
+  }
+}
+
+/* ---------------- counting ---------------- */
+function ripple(x,y,ok){
+  var e=document.createElement('span');
+  e.className='rip';
+  var s=ok?190:80;
+  e.style.cssText='width:'+s+'px;height:'+s+'px;left:'+x+'px;top:'+y+'px;background:radial-gradient(circle,'+
+    (ok?'rgba(230,192,123,.30)':'rgba(243,239,230,.10)')+' 0%,transparent 70%)';
+  $('stage').appendChild(e);
+  setTimeout(function(){e.remove();},700);
+}
+
+document.addEventListener('pointerdown',function(e){
+  if(S.screen!=='count')return;
+  if(e.isPrimary===false)return;
+  if(e.target.closest('.ui,.btn,.tile'))return;
+  if(S.tash)return;
+  var t=Date.now();
+  if(t-S.last<COOLDOWN){ripple(e.clientX,e.clientY,false);return;}
+  S.last=t;
+  ripple(e.clientX,e.clientY,true);
+  tick();
+},{passive:true});
+
+function tick(){
+  S.sujood++;
+  paintCounter();
+  buzz(28);
+  var n=$('rNum');n.classList.add('beat');setTimeout(function(){n.classList.remove('beat');},340);
+  if($('hint').style.opacity!=='0')$('hint').style.opacity='0';
+
+  var p=S.prayer,rak=rakOf(),suj=sujOf();
+  if(suj!==2)return;
+  var isFinal = !!p.rakaat && rak===p.rakaat;
+  var isMid   = p.rakaat ? (rak===2 && p.rakaat>2) : (rak%2===0);
+  if(isFinal||isMid) tashahhud(isFinal,p.rakaat?null:true);
+}
+
+/* ---------------- tashahhud moment ---------------- */
+function tashahhud(isFinal,openMode){
+  S.tash=true;
+  $('tSub').textContent = openMode?'':(isFinal?'التشهد الأخير':'التشهد الأوسط');
+  $('bgTash').classList.add('on');
+  $('cTop').classList.add('dim');$('cMid').classList.add('dim');$('cBot').classList.add('dim');
+  buzz([0,70,90,70]);
+  later(function(){$('tash').classList.add('show');},420);
+  later(function(){
+    $('tash').classList.remove('show');
+    later(function(){
+      $('bgTash').classList.remove('on');
+      S.tash=false;
+      if(isFinal){ finish(); }
+      else{ $('cTop').classList.remove('dim');$('cMid').classList.remove('dim');$('cBot').classList.remove('dim'); }
+    },900);
+  },420+HOLD);
+}
+
+/* ---------------- finish ---------------- */
+function finish(){
+  clearTimers();
+  var p=S.prayer,rak=rakOf(),time=nowTime();
+  $('dName').textContent = p.rakaat?p.name:'نافلة';
+  $('dMeta').textContent = rakWord(rak);
+  $('dTime').textContent = 'تمّت الساعة '+time;
+  $('cTop').classList.remove('dim');$('cMid').classList.remove('dim');$('cBot').classList.remove('dim');
+  if(p.rakaat) saveDone(p.id,time,rak);
+
+  // joined prayer suggestion: الظهر ← العصر, المغرب ← العشاء
+  var nx = p.next ? byId(p.next) : null;
+  var btn = $('bNext');
+  if(nx && !log.done[nx.id]){
+    btn.textContent = 'ابدأ صلاة '+nx.short;
+    btn.setAttribute('data-next', nx.id);
+    btn.hidden = false;
+    $('bHome').classList.add('quiet');
+  }else{
+    btn.hidden = true;
+    $('bHome').classList.remove('quiet');
+  }
+
+  buzz([0,45,70,45,70,130]);
+  show('done');
+}
+
+/* ---------------- buttons ---------------- */
+var exitArmed=false,exitT=null;
+$('bExit').addEventListener('click',function(){
+  if(S.sujood===0){goHome();return;}
+  if(exitArmed){goHome();return;}
+  exitArmed=true;toast('اضغط مرة أخرى للخروج دون حفظ');
+  clearTimeout(exitT);exitT=setTimeout(function(){exitArmed=false;},2600);
+});
+$('bUndo').addEventListener('click',function(){
+  if(S.sujood===0)return;
+  clearTimers();
+  if(S.tash){S.tash=false;$('tash').classList.remove('show');$('bgTash').classList.remove('on');
+    $('cTop').classList.remove('dim');$('cMid').classList.remove('dim');$('cBot').classList.remove('dim');}
+  S.sujood--;S.last=0;paintCounter();buzz(15);
+});
+$('bEnd').addEventListener('click',function(){
+  if(S.sujood===0){goHome();return;}
+  finish();
+});
+$('bNext').addEventListener('click',function(){
+  var p=byId(this.getAttribute('data-next'));
+  if(p) start(p);
+});
+$('bHome').addEventListener('click',goHome);
+$('bResume').addEventListener('click',function(){ show('count'); stayAwake(); });
+
+function goHome(){
+  clearTimers();exitArmed=false;
+  S.prayer=null;S.sujood=0;S.tash=false;
+  $('bgTash').classList.remove('on');$('tash').classList.remove('show');
+  var r=document.documentElement.style;
+  $('bgBase').style.opacity='0';
+  setTimeout(function(){r.setProperty('--a','#0A0D14');r.setProperty('--b','#131A2B');$('bgBase').style.opacity='1';},220);
+  paintTiles();show('home');
+}
+
+var toastT=null;
+function toast(msg){
+  var t=$('toast');t.textContent=msg;t.classList.add('on');
+  clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('on');},2400);
+}
+
+/* ---------------- keep the screen on ---------------- */
+/* Two layers, because neither is reliable by itself:
+   1. the Wake Lock API — the correct way, but it needs a secure context, so it
+      is absent when this page is opened straight from storage (file://);
+   2. a muted 64x64 looping video — crude, but Android will not sleep the screen
+      while a video plays, and it covers every case the first layer misses.
+   Inside the APK neither is load-bearing: MainActivity sets
+   FLAG_KEEP_SCREEN_ON, which no browser policy can override. */
+var wl=null;
+function stayAwake(){
+  try{
+    if(navigator.wakeLock && !wl){
+      navigator.wakeLock.request('screen').then(function(l){
+        wl=l;
+        l.addEventListener('release',function(){wl=null;});
+      }).catch(function(){});
+    }
+  }catch(e){}
+  var v=$('nosleep');
+  if(v){
+    v.muted=true;
+    if(v.paused){try{var p=v.play();if(p&&p.catch)p.catch(function(){});}catch(e){}}
+  }
+}
+/* playback may only begin from a real gesture, and the wake lock is dropped
+   whenever the app goes to the background — so re-arm on both */
+document.addEventListener('pointerdown',stayAwake,{passive:true});
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible')stayAwake();
+});
+
+/* ---------------- go ---------------- */
+loadLog();
+show('home');
+stayAwake();
+})();
+</script>
+</body>
+</html>

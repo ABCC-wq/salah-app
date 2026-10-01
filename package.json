@@ -1,0 +1,18 @@
+{
+  "name": "salah-counter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "عدّاد الصلاة — offline rak'ah counter for Android",
+  "scripts": {
+    "android:init": "npx cap add android && python3 patch-android.py && npx @capacitor/assets generate --android && npx cap sync android",
+    "android:apk": "cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.2"
+  }
+}

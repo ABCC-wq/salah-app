@@ -1,0 +1,7 @@
+{
+  "appId": "sa.salah.counter",
+  "appName": "عدّاد الصلاة",
+  "webDir": "www",
+  "android": { "backgroundColor": "#080A0C" },
+  "backgroundColor": "#080A0C"
+}
