@@ -59,12 +59,43 @@ if "android:screenOrientation" not in xml:
 mf.write_text(xml)
 print("manifest patched")
 
-# ---- 4. Version name, taken from package.json ------------------------------
-import json
+# ---- 4. Version name from package.json, build number from CI ---------------
+import json, os
 
 version = json.loads(pathlib.Path("package.json").read_text())["version"]
+build = os.environ.get("GITHUB_RUN_NUMBER", "1")
 bg = pathlib.Path("android/app/build.gradle")
-gradle, n = re.subn(r'versionName\s+"[^"]*"', f'versionName "{version}"', bg.read_text(), count=1)
-if n:
-    bg.write_text(gradle)
-    print(f"versionName set to {version}")
+gradle = bg.read_text()
+gradle = re.sub(r'versionName\s+"[^"]*"', f'versionName "{version}"', gradle, count=1)
+gradle = re.sub(r'versionCode\s+\d+', f'versionCode {build}', gradle, count=1)
+print(f"version set to {version} (build {build})")
+
+# ---- 5. Sign every build with the same key ---------------------------------
+# Without this each CI runner invents a fresh debug key, and Android refuses to
+# install an update whose signature differs from the installed app.
+# The key is not in the repo: CI writes it from the SIGNING_KEYSTORE_BASE64
+# secret, and the password comes from SIGNING_PASSWORD at build time.
+if not pathlib.Path("signing/salah.keystore").exists():
+    print("signing/salah.keystore not found - building with a throwaway debug key")
+elif "signing/salah.keystore" not in gradle:
+    gradle, n = re.subn(
+        r"^(\s*)buildTypes\s*\{",
+        "\\1signingConfigs {\n"
+        "\\1    debug {\n"
+        "\\1        storeFile file('../../signing/salah.keystore')\n"
+        "\\1        storeType 'pkcs12'\n"
+        "\\1        storePassword System.getenv('SIGNING_PASSWORD')\n"
+        "\\1        keyAlias 'salah'\n"
+        "\\1        keyPassword System.getenv('SIGNING_PASSWORD')\n"
+        "\\1    }\n"
+        "\\1}\n"
+        "\\1buildTypes {",
+        gradle,
+        count=1,
+        flags=re.M,
+    )
+    if n == 0:
+        sys.exit("could not find buildTypes in build.gradle to add the signing key")
+    print("signing with signing/salah.keystore")
+
+bg.write_text(gradle)

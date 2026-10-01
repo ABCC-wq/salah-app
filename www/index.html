@@ -259,6 +259,11 @@ var PRAYERS = [
 
 var COOLDOWN = 1500;   // ms between counted touches
 var HOLD     = 7000;   // ms the word تشهد stays on screen
+var DAY_START   = 4;          // hour the prayer day turns over, so a late Isha still counts for its evening
+var SESSION_TTL = 30*60*1000; // an unfinished count is restored if the app reopens within this long
+
+/* inside the APK the screen is kept on natively (FLAG_KEEP_SCREEN_ON) */
+var NATIVE = !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform());
 
 /* ---------------- helpers ---------------- */
 var AR='٠١٢٣٤٥٦٧٨٩';
@@ -276,7 +281,9 @@ function nowTime(){
   try{return new Date().toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});}
   catch(e){var d=new Date();return ar(d.getHours())+':'+ar(('0'+d.getMinutes()).slice(-2));}
 }
-function today(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
+function ymd(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
+function calendarDay(){return ymd(new Date());}
+function prayerDay(){var d=new Date();if(d.getHours()<DAY_START)d.setDate(d.getDate()-1);return ymd(d);}
 
 /* ---------------- storage (works in app, as a saved file, or in memory) ---------------- */
 var mem={};
@@ -295,18 +302,45 @@ var store={
     return Promise.resolve();
   }
 };
-var log={date:today(),done:{}};
+/* log.date is the prayer day the marks belong to. It can run one day ahead of
+   prayerDay(): finishing Fajr before DAY_START opens the new day early. */
+var log={date:prayerDay(),done:{}};
+function rollover(){
+  if(log.date<prayerDay()){log={date:prayerDay(),done:{}};return true;}
+  return false;
+}
 function loadLog(){
   return store.get('salah:log').then(function(raw){
-    if(raw){try{var p=JSON.parse(raw);if(p&&p.date===today())log=p;}catch(e){}}
+    if(raw){try{var p=JSON.parse(raw);
+      if(p&&/^\d{4}-\d\d-\d\d$/.test(p.date)&&p.date>=prayerDay())log=p;}catch(e){}}
     paintTiles();
   });
 }
 function saveDone(id,time,rak){
-  if(log.date!==today()){log={date:today(),done:{}};}
+  rollover();
+  if(id==='fajr'&&log.date<calendarDay()){log={date:calendarDay(),done:{}};}
   log.done[id]={t:time,r:rak};
   store.set('salah:log',JSON.stringify(log));
   paintTiles();
+}
+
+/* ---------------- unfinished count, so a closed app doesn't lose it ---------------- */
+function saveSession(){
+  if(!S.prayer||S.sujood===0){clearSession();return;}
+  store.set('salah:session',JSON.stringify({id:S.prayer.id,n:S.sujood,t:Date.now()}));
+}
+function clearSession(){store.set('salah:session','');}
+function restoreSession(){
+  return store.get('salah:session').then(function(raw){
+    if(!raw)return;
+    var s=null;try{s=JSON.parse(raw);}catch(e){}
+    var p=s&&byId(s.id);
+    if(!p||!(s.n>0)||Date.now()-s.t>SESSION_TTL){clearSession();return;}
+    start(p);
+    S.sujood=s.n;paintCounter();
+    $('hint').style.opacity='0';
+    toast('تمت استعادة العدّ');
+  });
 }
 
 /* ---------------- state ---------------- */
@@ -320,10 +354,15 @@ function show(name){
 }
 
 /* ---------------- home ---------------- */
+var paintedFor='';
 function paintTiles(){
+  rollover();
+  paintedFor=log.date+'|'+calendarDay();
   var g=$('grid');g.innerHTML='';
   PRAYERS.forEach(function(p,i){
     var d=log.done[p.id];
+    // after midnight, a Fajr mark still on the evening's log is yesterday's — today's is still due
+    if(p.id==='fajr'&&log.date!==calendarDay())d=null;
     var t=document.createElement('button');
     t.className='tile';t.setAttribute('data-done',d?'1':'0');
     t.innerHTML='<span class="nm">'+p.short+'</span><span class="rk">'+
@@ -408,6 +447,7 @@ document.addEventListener('pointerdown',function(e){
 function tick(){
   S.sujood++;
   paintCounter();
+  saveSession();
   buzz(28);
   var n=$('rNum');n.classList.add('beat');setTimeout(function(){n.classList.remove('beat');},340);
   if($('hint').style.opacity!=='0')$('hint').style.opacity='0';
@@ -446,6 +486,7 @@ function finish(){
   $('dMeta').textContent = rakWord(rak);
   $('dTime').textContent = 'تمّت الساعة '+time;
   $('cTop').classList.remove('dim');$('cMid').classList.remove('dim');$('cBot').classList.remove('dim');
+  clearSession();
   if(p.rakaat) saveDone(p.id,time,rak);
 
   // joined prayer suggestion: الظهر ← العصر, المغرب ← العشاء
@@ -478,7 +519,7 @@ $('bUndo').addEventListener('click',function(){
   clearTimers();
   if(S.tash){S.tash=false;$('tash').classList.remove('show');$('bgTash').classList.remove('on');
     $('cTop').classList.remove('dim');$('cMid').classList.remove('dim');$('cBot').classList.remove('dim');}
-  S.sujood--;S.last=0;paintCounter();buzz(15);
+  S.sujood--;S.last=0;paintCounter();saveSession();buzz(15);
 });
 $('bEnd').addEventListener('click',function(){
   if(S.sujood===0){goHome();return;}
@@ -489,10 +530,10 @@ $('bNext').addEventListener('click',function(){
   if(p) start(p);
 });
 $('bHome').addEventListener('click',goHome);
-$('bResume').addEventListener('click',function(){ show('count'); stayAwake(); });
+$('bResume').addEventListener('click',function(){ show('count'); saveSession(); stayAwake(); });
 
 function goHome(){
-  clearTimers();exitArmed=false;
+  clearTimers();exitArmed=false;clearSession();
   S.prayer=null;S.sujood=0;S.tash=false;
   $('bgTash').classList.remove('on');$('tash').classList.remove('show');
   var r=document.documentElement.style;
@@ -516,7 +557,9 @@ function toast(msg){
    Inside the APK neither is load-bearing: MainActivity sets
    FLAG_KEEP_SCREEN_ON, which no browser policy can override. */
 var wl=null;
+if(NATIVE){var nv=$('nosleep');if(nv)nv.remove();}
 function stayAwake(){
+  if(NATIVE)return;
   try{
     if(navigator.wakeLock && !wl){
       navigator.wakeLock.request('screen').then(function(l){
@@ -538,8 +581,18 @@ document.addEventListener('visibilitychange',function(){
   if(document.visibilityState==='visible')stayAwake();
 });
 
+/* the app can sit open across midnight or DAY_START — repaint the marks when the day turns */
+function dayCheck(){
+  if(S.screen==='home'&&paintedFor!==prayerDay()+'|'+calendarDay()&&
+     paintedFor!==log.date+'|'+calendarDay())paintTiles();
+}
+setInterval(dayCheck,60000);
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible')dayCheck();
+});
+
 /* ---------------- go ---------------- */
-loadLog();
+loadLog().then(restoreSession);
 show('home');
 stayAwake();
 })();
